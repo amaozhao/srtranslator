@@ -1,0 +1,11 @@
+1
+00:00:00,000 --> 07,600
+ Welcome to our first practical video on QA. Over the next couple of videos, we're going to focus on setup.
+
+2
+00:00:07,600 --> 00:00:15,360
+ And the first piece of setup is that we need an API key. And we're going to use the OpenAI.
+
+3
+00:00:15,360 --> 00:00:24,160
+ So let me just Google OpenAI API. And this is an overview. We need to come to platform.openai.
