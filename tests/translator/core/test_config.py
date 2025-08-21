@@ -60,8 +60,7 @@ class TestSettings:
 
     def test_validation(self):
         """Test that validation works for settings."""
-        with mock.patch.dict(os.environ, {
-                "MAX_CONCURRENT_REQUESTS": "not_an_integer"}):
+        with mock.patch.dict(os.environ, {"MAX_CONCURRENT_REQUESTS": "not_an_integer"}):
             with pytest.raises(ValidationError):
                 Settings()
 

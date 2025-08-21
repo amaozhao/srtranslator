@@ -86,9 +86,7 @@ class SubtitleSplitter:
             # 检查字幕内容是否以句子结束符结尾
             content = sub.content.strip()
             is_sentence_end = (
-                content and self._is_sentence_ender(
-                    content[-1]
-                ) if content else False
+                content and self._is_sentence_ender(content[-1]) if content else False
             )
 
             # 将当前字幕添加到待处理列表

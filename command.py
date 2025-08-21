@@ -41,8 +41,9 @@ def trans_file(
     asyncio.run(_trans_file(file, out, src, tgt, tokens))
 
 
-async def _trans_file(in_path: Path, out_path: Optional[Path],
-                      src: str, tgt: str, tokens: int):
+async def _trans_file(
+    in_path: Path, out_path: Optional[Path], src: str, tgt: str, tokens: int
+):
     """处理单个文件"""
     wf = SubtitleWorkflow(max_tokens=tokens)
 
@@ -63,8 +64,7 @@ async def _trans_file(in_path: Path, out_path: Optional[Path],
                 progress.update(task, description=resp.content)
 
             if getattr(resp, "error", None):
-                console.print(
-                    f"[bold red]错误:[/bold red] {getattr(resp, 'error')}")
+                console.print(f"[bold red]错误:[/bold red] {getattr(resp, 'error')}")
                 raise typer.Exit(1)
 
     if out_path is None:
@@ -96,8 +96,7 @@ def trans_dir(
 
 
 async def _trans_dir(
-        in_dir: Path, out_dir: Optional[Path],
-        src: str, tgt: str, tokens: int
+    in_dir: Path, out_dir: Optional[Path], src: str, tgt: str, tokens: int
 ):
     """处理目录中的所有文件"""
     files = list(in_dir.rglob("*.srt"))
@@ -122,8 +121,11 @@ async def _trans_dir(
 
         try:
             await _trans_file(
-                in_path=in_file, out_path=out_file,
-                src=src, tgt=tgt, tokens=tokens,
+                in_path=in_file,
+                out_path=out_file,
+                src=src,
+                tgt=tgt,
+                tokens=tokens,
             )
         except Exception as e:
             console.print(f"[bold red]错误:[/bold red] {in_file}: {str(e)}")

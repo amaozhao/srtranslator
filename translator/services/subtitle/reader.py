@@ -39,9 +39,7 @@ class SubtitleReader:
             content = await file.read()
             return content
 
-    async def read(
-        self, file_path: str, ignore_errors: bool = False
-    ) -> List[Subtitle]:
+    async def read(self, file_path: str, ignore_errors: bool = False) -> List[Subtitle]:
         """
         异步从 SRT 文件中解析字幕内容。
 

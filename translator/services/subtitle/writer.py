@@ -13,11 +13,7 @@ class SubtitleWriter:
         self._srt_parser = SubtitleParser()
         self.compose = self._srt_parser.compose
 
-    async def save(
-            self, content: str,
-            file_path: str,
-            encoding: str = "utf-8"
-    ) -> str:
+    async def save(self, content: str, file_path: str, encoding: str = "utf-8") -> str:
         """异步将内容写入文本文件。
 
         Args:
@@ -42,14 +38,14 @@ class SubtitleWriter:
             return file_path
 
     async def write(
-            self,
-            file_path: str,
-            subtitles: List[Subtitle],
-            encoding: str = "utf-8",
-            reindex: bool = True,
-            start_index: int = 1,
-            strict: bool = True,
-            eol: str = '\n',
+        self,
+        file_path: str,
+        subtitles: List[Subtitle],
+        encoding: str = "utf-8",
+        reindex: bool = True,
+        start_index: int = 1,
+        strict: bool = True,
+        eol: str = "\n",
     ) -> str:
         """
         异步将 Subtitle 对象列表合成 SRT 字符串并写入文件。

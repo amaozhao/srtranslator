@@ -1,6 +1,7 @@
 # agents/translator.py
 from agno.agent import Agent
-from agno.models.deepseek import DeepSeek
+# from agno.models.deepseek import DeepSeek
+from agno.models.openai.like import OpenAILike
 
 from translator.core.config import settings
 
@@ -19,12 +20,17 @@ instructions = [
     "- 确保所有英文都有中文翻译，无遗漏。\n"
     "- 即使输入有误，也只返回 SRT 格式，绝不拒绝或返回错误信息。\n"
     "- 永远不要返回类似 '我不能执行此任务' 的消息。",
-    "格式示例：\n1\n00:00:01,000 --> 00:00:05,000\nEnglish text here.\n中文翻译在这里。"
+    "格式示例：\n1\n00:00:01,000 --> 00:00:05,000\nEnglish text here.\n中文翻译在这里。",
 ]
 
 # 直接创建 DeepSeek 模型实例
-model = DeepSeek(
-    api_key=settings.DEEPSEEK_API_KEY,
+# model = DeepSeek(
+#     api_key=settings.DEEPSEEK_API_KEY,
+# )
+model = OpenAILike(
+    id=settings.KIMI_MODEL,
+    api_key=settings.KIMI_API_KEY,
+    base_url=settings.KIMI_BASE_URL,
 )
 
 

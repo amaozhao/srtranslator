@@ -6,13 +6,13 @@ from agno.workflow import RunResponse, Workflow
 
 from .proofer import get_proofer
 from .translator import get_translator
-from translator.core.logger import get_logger
+from translator.core.logger import workflow_logger as logger
 from translator.services.subtitle.srt import SrtService
 from translator.services.subtitle.parser import (
-    RGX_INDEX, RGX_POSSIBLE_CRLF, RGX_TIMESTAMP
+    RGX_INDEX,
+    RGX_POSSIBLE_CRLF,
+    RGX_TIMESTAMP,
 )
-
-logger = get_logger(__name__)
 
 
 class SubtitleWorkflow(Workflow):
@@ -23,14 +23,12 @@ class SubtitleWorkflow(Workflow):
     # 定义匹配 SRT 块开始的正则表达式
     SRT_BLOCK_START_PATTERN = re.compile(
         r"\s*({idx})\s*{eof}({ts}) *-[ -] *> *({ts})".format(
-            idx=RGX_INDEX,
-            ts=RGX_TIMESTAMP,
-            eof=RGX_POSSIBLE_CRLF
+            idx=RGX_INDEX, ts=RGX_TIMESTAMP, eof=RGX_POSSIBLE_CRLF
         )
     )
 
     # 定义匹配代码块的正则表达式
-    CODE_BLOCK_PATTERN = re.compile(r'```(?:srt)?\s*\n([\s\S]*?)\n\s*```')
+    CODE_BLOCK_PATTERN = re.compile(r"```(?:srt)?\s*\n([\s\S]*?)\n\s*```")
 
     def __init__(self, max_tokens: int = 2500):
         """
@@ -76,16 +74,15 @@ class SubtitleWorkflow(Workflow):
             out_path_obj = Path(output_path)
             # 如果给定的是目录，保留原始目录结构并添加后缀
             if out_path_obj.exists() and out_path_obj.is_dir():
-                out_file = out_path_obj / in_path_obj.with_stem(
-                    f"{in_path_obj.stem}_{target_lang}"
-                ).name
+                out_file = (
+                    out_path_obj
+                    / in_path_obj.with_stem(f"{in_path_obj.stem}_{target_lang}").name
+                )
             else:
                 # 当作文件路径处理（即使不存在，也按文件路径写入）
                 out_file = out_path_obj
         else:
-            out_file = in_path_obj.with_stem(
-                f"{in_path_obj.stem}_{target_lang}"
-            )
+            out_file = in_path_obj.with_stem(f"{in_path_obj.stem}_{target_lang}")
 
         yield RunResponse(
             content=f"开始处理字幕文件: {input_path}",
@@ -274,9 +271,7 @@ class SubtitleWorkflow(Workflow):
             proofed_content, label="Proofer"
         )
         if not is_valid:
-            logger.warning(
-                f"Proofer 输出格式无效: {error_msg}，回退到上一步输出"
-            )
+            logger.warning(f"Proofer 输出格式无效: {error_msg}，回退到上一步输出")
             logger.debug(f"Proofer 完整输出内容: '''{proofed_content}'''")
         else:
             logger.info("Proofer 输出格式有效")
@@ -294,9 +289,7 @@ class SubtitleWorkflow(Workflow):
             translated_content, label="Translator"
         )
         if not is_valid:
-            logger.warning(
-                f"Translator 输出格式无效: {error_msg}，回退到上一步输出"
-            )
+            logger.warning(f"Translator 输出格式无效: {error_msg}，回退到上一步输出")
             logger.debug(f"Translator 完整输出内容: '''{translated_content}'''")
             translated_content = proofed_content
         else:

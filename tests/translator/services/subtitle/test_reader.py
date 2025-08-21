@@ -6,8 +6,9 @@ from translator.services.subtitle.reader import SubtitleReader
 
 class TestSubtitleReader:
     """测试字幕读取。"""
-    srt_path = 'tests/test.srt'
-    invalid_srt = 'tests/test2.srt'
+
+    srt_path = "tests/test.srt"
+    invalid_srt = "tests/test2.srt"
 
     @pytest.mark.asyncio
     async def test_read(self):

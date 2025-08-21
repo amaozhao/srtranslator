@@ -19,8 +19,7 @@ RGX_TIMESTAMP = "".join(
 RGX_TIMESTAMP_PARSEABLE = r"^{}$".format(
     "".join(
         [
-            RGX_TIMESTAMP_MAGNITUDE_DELIM.join(
-                ["(" + RGX_TIMESTAMP_FIELD + ")"] * 3),
+            RGX_TIMESTAMP_MAGNITUDE_DELIM.join(["(" + RGX_TIMESTAMP_FIELD + ")"] * 3),
             RGX_TIMESTAMP_MAGNITUDE_DELIM,
             "?",
             "(",
@@ -126,10 +125,7 @@ class Subtitle:
         return "\n".join(legal_content_lines)
 
     def _format_timestamp(self, timedelta_timestamp):
-        hrs, secs_remainder = divmod(
-            timedelta_timestamp.seconds,
-            SECONDS_IN_HOUR
-        )
+        hrs, secs_remainder = divmod(timedelta_timestamp.seconds, SECONDS_IN_HOUR)
         hrs += timedelta_timestamp.days * HOURS_IN_DAY
         mins, secs = divmod(secs_remainder, SECONDS_IN_MINUTE)
         msecs = timedelta_timestamp.microseconds // MICROSECONDS_IN_MILLISECOND
@@ -164,9 +160,7 @@ class TimestampParseError(ValueError):
 
 class SubtitleParser:
 
-    def parse(
-            self, srt_data: str, ignore_errors: bool = False
-    ) -> List[Subtitle]:
+    def parse(self, srt_data: str, ignore_errors: bool = False) -> List[Subtitle]:
         """
         将 SRT 格式的字符串或文件对象解析为 Subtitle 对象列表。
         解析时会自动删除字幕内容每行前后的所有空格。
@@ -193,11 +187,9 @@ class SubtitleParser:
             ) = match.groups()
 
             processed_content_lines = [
-                line.strip() for line in content.replace(
-                    "\r\n", "\n").split("\n")
+                line.strip() for line in content.replace("\r\n", "\n").split("\n")
             ]
-            content_cleaned_per_line = "\n".join(
-                processed_content_lines).strip()
+            content_cleaned_per_line = "\n".join(processed_content_lines).strip()
 
             try:
                 raw_index = int(raw_index)
@@ -215,8 +207,7 @@ class SubtitleParser:
             )
             expected_start = match.end()
 
-        self._check_continuity(
-            srt_data, expected_start, len(srt_data), ignore_errors)
+        self._check_continuity(srt_data, expected_start, len(srt_data), ignore_errors)
         return subtitles
 
     def compose(
@@ -253,10 +244,8 @@ class SubtitleParser:
             subtitles_to_compose = subtitles
 
         return "".join(
-            subtitle.to_srt(
-                strict=strict,
-                eol=eol or "\n"
-            ) for subtitle in subtitles_to_compose
+            subtitle.to_srt(strict=strict, eol=eol or "\n")
+            for subtitle in subtitles_to_compose
         )
 
     def _parse_timestamp(self, timestamp: str) -> timedelta:
@@ -264,12 +253,7 @@ class SubtitleParser:
         if match is None:
             raise TimestampParseError(f"无法解析时间戳: {timestamp}")
         hrs, mins, secs, msecs = [int(m) if m else 0 for m in match.groups()]
-        return timedelta(
-            hours=hrs,
-            minutes=mins,
-            seconds=secs,
-            milliseconds=msecs
-        )
+        return timedelta(hours=hrs, minutes=mins, seconds=secs, milliseconds=msecs)
 
     def _check_continuity(
         self, srt: str, expected_start: int, actual_start: int, warn_only: bool
@@ -281,5 +265,4 @@ class SubtitleParser:
             ):
                 return
             if not warn_only:
-                raise SRTParseError(
-                    expected_start, actual_start, unmatched_content)
+                raise SRTParseError(expected_start, actual_start, unmatched_content)

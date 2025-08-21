@@ -108,3 +108,6 @@ def get_logger(name: str) -> structlog.stdlib.BoundLogger:
         structlog.stdlib.BoundLogger: A configured structlog logger instance.
     """
     return structlog.get_logger(name)
+
+
+workflow_logger = get_logger("translator.workflow")

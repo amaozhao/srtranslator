@@ -19,8 +19,7 @@ class SrtService:
         self.writer = SubtitleWriter()
 
     async def split(
-            self,
-            file_path: str, max_tokens: int = 200
+        self, file_path: str, max_tokens: int = 200
     ) -> List[List[Subtitle]]:
         """
         异步读取并解析 SRT 文件, 并合并相邻的字幕条目
@@ -34,8 +33,7 @@ class SrtService:
         subtitles = await self.reader.read(file_path)
         subtitles = self.merger.merge(subtitles)
         chunked_subtitles = self.splitter.split_subtitles(
-            subtitles,
-            max_tokens=max_tokens
+            subtitles, max_tokens=max_tokens
         )
         return chunked_subtitles
 

@@ -51,9 +51,7 @@ class TestLogger:
 
                     # Verify handlers are correctly configured in
                     # logging.basicConfig
-                    with mock.patch(
-                        "logging.basicConfig"
-                    ) as mock_basic_config:
+                    with mock.patch("logging.basicConfig") as mock_basic_config:
                         configure_logging()
                         # Check that basicConfig was called
                         assert mock_basic_config.called
@@ -67,7 +65,7 @@ class TestLogger:
         # Get a logger
         logger = get_logger("test_logger")
 
-        # Verify it's a structlog logger 
+        # Verify it's a structlog logger
         # (could be BoundLogger or BoundLoggerLazyProxy)
         # Just check that it's from structlog and has the expected methods
         assert hasattr(logger, "info")

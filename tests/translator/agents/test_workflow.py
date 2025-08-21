@@ -23,7 +23,7 @@ World
 
         wf = SubtitleWorkflow(max_tokens=100)
 
-    # mock SrtService.split: return a single chunk (list of Subtitle objects)
+        # mock SrtService.split: return a single chunk (list of Subtitle objects)
         async def fake_split(path, max_tokens):
             # reuse parser to parse and return a single chunk
             subs = wf.srt_service.parser.parse(srt_content)
@@ -104,9 +104,7 @@ World
         # fake parse/compose behavior
         srt = "1\n00:00:01,000 --> 00:00:02,000\nHello\n"
         # prepare parser.compose to return the srt string
-        monkeypatch.setattr(
-            wf.srt_service.parser, "compose", lambda x: srt
-        )
+        monkeypatch.setattr(wf.srt_service.parser, "compose", lambda x: srt)
 
         class DummyResp:
             def __init__(self, content):
@@ -136,5 +134,5 @@ World
 
         # run _process_chunk directly
         processed = await wf._process_chunk(srt, "en", "zh")
-    # translator 返回无效，应回退到 proofed_content（即 srt）
+        # translator 返回无效，应回退到 proofed_content（即 srt）
         assert "Hello" in processed
