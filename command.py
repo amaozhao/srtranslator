@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from translator.agents.workflow import SubtitleWorkflow
+from translator.services.subtitle.srt import SrtService
 
 app = typer.Typer(help="Translator Command - 字幕翻译工具")
 console = Console()
@@ -64,7 +65,9 @@ async def _trans_file(
                 progress.update(task, description=resp.content)
 
             if getattr(resp, "error", None):
-                console.print(f"[bold red]错误:[/bold red] {getattr(resp, 'error')}")
+                console.print(
+                    f"[bold red]错误:[/bold red] {getattr(resp, 'error')}"
+                )
                 raise typer.Exit(1)
 
     if out_path is None:
@@ -131,6 +134,77 @@ async def _trans_dir(
             console.print(f"[bold red]错误:[/bold red] {in_file}: {str(e)}")
 
     console.print("[bold green]全部完成![/bold green]")
+
+
+@app.command("merge-file")
+def merge_file(
+    file: Path = typer.Argument(..., help="SRT文件"),
+    out: Optional[Path] = typer.Option(None, "-o", help="输出文件或目录"),
+):
+    """将单个 SRT 文件合并（merger），并保存合并后的中间 SRT 文件。"""
+    if not file.exists():
+        console.print(f"[bold red]错误:[/bold red] 文件{file}不存在")
+        raise typer.Exit(1)
+
+    service = SrtService()
+
+    # 读取并合并
+    async def _do():
+        subs = await service.reader.read(str(file))
+        merged = service.merger.merge(subs)
+        if out:
+            out_path = out
+            if out_path.is_dir():
+                out_file = (
+                    out_path / file.with_stem(f"{file.stem}_merged").name
+                )
+            else:
+                out_file = out_path
+        else:
+            out_file = file.with_stem(f"{file.stem}_merged")
+
+        await service.writer.write(str(out_file), merged)
+        return out_file
+
+    out_file = asyncio.run(_do())
+    console.print(f"[bold green]合并完成:[/bold green] {out_file}")
+
+
+@app.command("merge-dir")
+def merge_dir(
+    dir: Path = typer.Argument(..., help="SRT目录"),
+    out_dir: Optional[Path] = typer.Option(None, "-o", help="输出目录"),
+):
+    """递归合并目录下所有 SRT 文件并保存合并结果到 out_dir（保持相对结构）。"""
+    if not dir.exists() or not dir.is_dir():
+        console.print(f"[bold red]错误:[/bold red] {dir}不存在或非目录")
+        raise typer.Exit(1)
+
+    service = SrtService()
+
+    files = list(dir.rglob("*.srt"))
+    if not files:
+        console.print(f"[bold yellow]警告:[/bold yellow] {dir}中无SRT文件")
+        return
+
+    if out_dir and not out_dir.exists():
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+    async def _process_all():
+        for f in files:
+            subs = await service.reader.read(str(f))
+            merged = service.merger.merge(subs)
+            if out_dir:
+                rel = f.relative_to(dir)
+                target = out_dir / rel.with_stem(f"{rel.stem}_merged")
+                target.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                target = f.with_stem(f"{f.stem}_merged")
+
+            await service.writer.write(str(target), merged)
+
+    asyncio.run(_process_all())
+    console.print("[bold green]批量合并完成![/bold green]")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from agno.agent import Agent
 # from agno.models.deepseek import DeepSeek
-from agno.models.openai.like import OpenAILike
+# from agno.models.openai.like import OpenAILike
+from agno.models.google import Gemini
 
 from translator.core.config import settings
 
@@ -8,10 +9,14 @@ from translator.core.config import settings
 # model = DeepSeek(
 #     api_key=settings.DEEPSEEK_API_KEY,
 # )
-model = OpenAILike(
-    id=settings.KIMI_MODEL,
-    api_key=settings.KIMI_API_KEY,
-    base_url=settings.KIMI_BASE_URL,
+# model = OpenAILike(
+#     id=settings.KIMI_MODEL,
+#     api_key=settings.KIMI_API_KEY,
+#     base_url=settings.KIMI_BASE_URL,
+# )
+model = Gemini(
+    id=settings.GEMINI_MODEL,
+    api_key=settings.GEMINI_API_KEY,
 )
 
 

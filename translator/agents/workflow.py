@@ -76,21 +76,26 @@ class SubtitleWorkflow(Workflow):
             if out_path_obj.exists() and out_path_obj.is_dir():
                 out_file = (
                     out_path_obj
-                    / in_path_obj.with_stem(f"{in_path_obj.stem}_{target_lang}").name
+                    / in_path_obj.with_stem(
+                        f"{in_path_obj.stem}_{target_lang}").name
                 )
             else:
                 # 当作文件路径处理（即使不存在，也按文件路径写入）
                 out_file = out_path_obj
         else:
-            out_file = in_path_obj.with_stem(f"{in_path_obj.stem}_{target_lang}")
+            out_file = in_path_obj.with_stem(
+                f"{in_path_obj.stem}_{target_lang}")
 
         yield RunResponse(
             content=f"开始处理字幕文件: {input_path}",
             run_id=self.run_id,
         )
+
         # 1. Split into manageable chunks
         yield RunResponse(content="分割字幕为处理块...", run_id=self.run_id)
-        chunks = await self.srt_service.split(input_path, self.max_tokens)
+        chunks = await self.srt_service.split(
+            input_path, self.max_tokens
+        )
         if not chunks:
             yield RunResponse(
                 content="字幕分块失败，流程终止。",
@@ -99,6 +104,7 @@ class SubtitleWorkflow(Workflow):
             return
         yield RunResponse(content=f"分割为 {len(chunks)} 个块。", run_id=self.run_id)
         processed_subtitles = []
+
         # 2. Process each chunk
         for i, chunk in enumerate(chunks, 1):
             yield RunResponse(
@@ -131,6 +137,7 @@ class SubtitleWorkflow(Workflow):
             yield RunResponse(
                 content=f"已完成第 {i}/{len(chunks)} 块。", run_id=self.run_id
             )
+
         # 3. Save the processed subtitles
         yield RunResponse(
             content=f"保存处理后的字幕到 {out_file}...", run_id=self.run_id
@@ -271,8 +278,10 @@ class SubtitleWorkflow(Workflow):
             proofed_content, label="Proofer"
         )
         if not is_valid:
+            # 提取失败：回退到原始 chunk
             logger.warning(f"Proofer 输出格式无效: {error_msg}，回退到上一步输出")
             logger.debug(f"Proofer 完整输出内容: '''{proofed_content}'''")
+            proofed_content = chunk_srt
         else:
             logger.info("Proofer 输出格式有效")
 

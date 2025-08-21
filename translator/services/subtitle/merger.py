@@ -59,7 +59,8 @@ class SubtitleMerger:
                     ends_with_sentence_punct = True
 
             pause_duration = next_subtitle.start - current_subtitle.end
-            potential_total_duration = next_subtitle.end - current_subtitle.start
+            potential_total_duration = \
+                next_subtitle.end - current_subtitle.start
 
             should_merge = (
                 not ends_with_sentence_punct

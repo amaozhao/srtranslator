@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     KIMI_API_KEY: str = "your-api-key-here"
     KIMI_MODEL: str = "kimi-latest"
 
+    # Gemini 引擎配置
+    GEMINI_API_KEY: str = "your-api-key-here"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+
     # 日志设置
     LOG_LEVEL: Literal[
         "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
