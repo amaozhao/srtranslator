@@ -89,8 +89,8 @@ class SubtitleSplitter:
         if current:
             chunks.append(current)
 
-        # Post-process: merge very small chunks (e.g. length 1) with neighbors to
-        # avoid many tiny chunks. Heuristic: ensure each chunk has at least
+        # Post-process: merge very small chunks (e.g. length 1) with neighbors
+        # to avoid many tiny chunks. Heuristic: ensure each chunk has at least
         # min_items or merge with previous when possible.
         min_items = 3
         merged: List[List[Subtitle]] = []
