@@ -12,6 +12,7 @@ from translator.services.subtitle.parser import (
     RGX_INDEX,
     RGX_POSSIBLE_CRLF,
     RGX_TIMESTAMP,
+    Subtitle,
 )
 
 
@@ -117,9 +118,46 @@ class SubtitleWorkflow(Workflow):
                     run_id=self.run_id,
                 )
                 return
-            processed_srt = await self._process_chunk(
-                chunk_srt, source_lang, target_lang
-            )
+            # 计算原始 chunk 的字幕条数，用于后续验证和缓存匹配
+            try:
+                orig_parsed = self.srt_service.parser.parse(chunk_srt) or []
+                original_count = len(orig_parsed)
+            except Exception:
+                original_count = 0
+            logger.info(f"第 {i} 块原始字幕条数: {original_count} (用于断点续传校验)")
+
+            # 先尝试从缓存中加载已处理的 chunk（支持断点续传）
+            processed_srt = None
+            try:
+                cached = await self.srt_service.get_processed_chunk(
+                    input_path, i, target_lang
+                )
+            except Exception:
+                cached = None
+
+            if cached:
+                try:
+                    cached_parsed = self.srt_service.parser.parse(cached) or []
+                    if len(cached_parsed) == original_count:
+                        logger.info(f"第 {i} 块命中缓存，跳过处理")
+                        processed_srt = cached
+                    else:
+                        logger.warning(
+                            (
+                                f"第 {i} 块缓存条目数不匹配（缓存: {len(cached_parsed)} "
+                                f"vs 原始: {original_count}），忽略缓存并重新处理"
+                            )
+                        )
+                        processed_srt = None
+                except Exception:
+                    logger.warning(f"第 {i} 块缓存解析失败，忽略缓存并重新处理")
+                    processed_srt = None
+
+            # 如果没有可用缓存则执行处理
+            if processed_srt is None:
+                processed_srt = await self._process_chunk(
+                    chunk_srt, source_lang, target_lang
+                )
             if not processed_srt:
                 yield RunResponse(
                     content=f"第 {i} 块字幕处理失败，流程终止。",
@@ -133,6 +171,128 @@ class SubtitleWorkflow(Workflow):
                     run_id=self.run_id,
                 )
                 return
+            # 校验条目数与时间戳是否保持原状；若不匹配，尝试重试或回退到映射修复
+            try:
+                if len(processed_chunk) != original_count:
+                    logger.warning(
+                        (
+                            f"第 {i} 块处理后的条目数不匹配（处理后: {len(processed_chunk)} "
+                            f"vs 原始: {original_count}），尝试重试一次或映射回原始时间戳"
+                        )
+                    )
+                    # 尝试重试一次
+                    try:
+                        retry_srt = await self._process_chunk(
+                            chunk_srt, source_lang, target_lang
+                        )
+                        retry_parsed = (
+                            self.srt_service.parser.parse(retry_srt) or []
+                        )
+                        if len(retry_parsed) == original_count:
+                            processed_srt = retry_srt
+                            processed_chunk = retry_parsed
+                        else:
+                            raise RuntimeError("retry count mismatch")
+                    except Exception:
+                        # 最后保守策略：将翻译文本逐条映射回原始时间戳
+                        try:
+                            mapped = []
+                            for orig, proc in zip(
+                                orig_parsed, processed_chunk
+                            ):
+                                mapped.append(
+                                    Subtitle(
+                                        index=orig.index,
+                                        start=orig.start,
+                                        end=orig.end,
+                                        content=proc.content,
+                                        proprietary=orig.proprietary,
+                                    )
+                                )
+                            processed_chunk = mapped
+                            processed_srt = (
+                                self.srt_service.parser.compose(mapped)
+                            )
+                            logger.warning(
+                                f"第 {i} 块已用原始时间戳映射翻译文本，继续流程"
+                            )
+                        except Exception:
+                            yield RunResponse(
+                                content=f"第 {i} 块最终修复失败，流程终止。",
+                                run_id=self.run_id,
+                            )
+                            return
+                else:
+                    # 长度一致时，再做时间戳逐条比对
+                    mismatch = False
+                    for o, p in zip(orig_parsed, processed_chunk):
+                        try:
+                            if p.start != o.start or p.end != o.end:
+                                mismatch = True
+                                break
+                        except Exception:
+                            mismatch = True
+                            break
+                    if mismatch:
+                        logger.warning(
+                            f"第 {i} 块处理后存在时间戳不匹配，尝试重试一次"
+                        )
+                        try:
+                            retry_srt = await self._process_chunk(
+                                chunk_srt, source_lang, target_lang
+                            )
+                            retry_parsed = (
+                                self.srt_service.parser.parse(retry_srt) or []
+                            )
+                            good = True
+                            if len(retry_parsed) == original_count:
+                                for o, r in zip(orig_parsed, retry_parsed):
+                                    if r.start != o.start or r.end != o.end:
+                                        good = False
+                                        break
+                            else:
+                                good = False
+                            if good:
+                                processed_srt = retry_srt
+                                processed_chunk = retry_parsed
+                            else:
+                                # fallback to mapping
+                                mapped = []
+                                for orig, proc in zip(
+                                    orig_parsed, processed_chunk
+                                ):
+                                    mapped.append(
+                                        Subtitle(
+                                            index=orig.index,
+                                            start=orig.start,
+                                            end=orig.end,
+                                            content=proc.content,
+                                            proprietary=orig.proprietary,
+                                        )
+                                    )
+                                processed_chunk = mapped
+                                processed_srt = (
+                                    self.srt_service.parser.compose(mapped)
+                                )
+                                logger.warning(
+                                    f"第 {i} 块已用原始时间戳映射翻译文本，继续流程"
+                                )
+                        except Exception:
+                            yield RunResponse(
+                                content=f"第 {i} 块重试处理失败，流程终止。",
+                                run_id=self.run_id,
+                            )
+                            return
+            except Exception:
+                logger.exception(f"第 {i} 块在时间戳校验过程中发生异常")
+            # 保存处理后的 chunk 到缓存（如果不是来自缓存）
+            if processed_srt and cached != processed_srt:
+                try:
+                    await self.srt_service.save_processed_chunk(
+                        input_path, i, target_lang, processed_srt
+                    )
+                except Exception:
+                    logger.warning(f"保存第 {i} 块缓存失败，继续不阻塞流程")
             processed_subtitles.extend(processed_chunk)
             yield RunResponse(
                 content=f"已完成第 {i}/{len(chunks)} 块。", run_id=self.run_id
@@ -271,7 +431,7 @@ class SubtitleWorkflow(Workflow):
         proofed_content = proof.content
 
         # 记录 Proofer 返回的原始内容（截取前500个字符）
-        logger.info(f"Proofer 返回内容前500字符: {proofed_content[:500]}")
+        logger.info(f"Proofer 返回内容: {proofed_content}")
 
         # 验证 Proofer 输出格式并尝试提取有效 SRT
         is_valid, proofed_content, error_msg = self._extract_valid_srt(
@@ -290,8 +450,8 @@ class SubtitleWorkflow(Workflow):
         translated = await get_translator().arun(proofed_content)
         translated_content = translated.content
 
-        # 记录 Translator 返回的原始内容（截取前500个字符）
-        logger.info(f"Translator 返回内容前500字符: {translated_content[:500]}")
+        # 记录 Translator 返回的原始内容
+        logger.info(f"Translator 返回内容: {translated_content}")
 
         # 验证 Translator 输出格式并尝试提取有效 SRT
         is_valid, translated_content, error_msg = self._extract_valid_srt(

@@ -57,107 +57,59 @@ class SubtitleSplitter:
         if not subtitles or max_tokens <= 0:
             return []
 
-        chunks = []
-        current_chunk = []
-        pending_subs = []  # 存储未完成句子的字幕
+        chunks: List[List[Subtitle]] = []
+        current: List[Subtitle] = []
+        current_tokens = 0
 
+        # Greedy accumulation: add subtitles until adding the next one would
+        # exceed max_tokens, then flush current chunk.
         for sub in subtitles:
-            # 计算当前字幕的 SRT 格式字符串的 token 数量
             sub_srt = sub.to_srt()
             sub_tokens = self._count_tokens(sub_srt)
 
-            # 如果单个字幕就超过了最大 token 限制，则单独作为一个块
+            # If a single subtitle exceeds the budget, emit it as its own
+            # chunk.
             if sub_tokens > max_tokens:
-                # 先处理之前积累的未完成句子
-                if pending_subs:
-                    if current_chunk:
-                        chunks.append(current_chunk)
-                    chunks.append(pending_subs)
-                    pending_subs = []
-                    current_chunk = []
-
-                if current_chunk:
-                    chunks.append(current_chunk)
-                    current_chunk = []
-
+                if current:
+                    chunks.append(current)
+                    current = []
+                    current_tokens = 0
                 chunks.append([sub])
                 continue
 
-            # 检查字幕内容是否以句子结束符结尾
-            content = sub.content.strip()
-            is_sentence_end = (
-                content and self._is_sentence_ender(content[-1]) if content else False
-            )
-
-            # 将当前字幕添加到待处理列表
-            pending_subs.append(sub)
-
-            # 检查添加当前待处理字幕后是否会超过 token 限制
-            all_subs = current_chunk + pending_subs
-            all_srt = "".join(s.to_srt() for s in all_subs)
-            all_tokens = self._count_tokens(all_srt)
-
-            # 如果添加后不超过限制且当前字幕是句子结束，则合并到当前块
-            if all_tokens <= max_tokens:
-                if is_sentence_end:
-                    current_chunk.extend(pending_subs)
-                    pending_subs = []
+            # If adding this subtitle would exceed the budget, flush current.
+            if current and (current_tokens + sub_tokens) > max_tokens:
+                chunks.append(current)
+                current = [sub]
+                current_tokens = sub_tokens
             else:
-                # 超过限制，需要开始新块
-                if current_chunk:
-                    chunks.append(current_chunk)
+                current.append(sub)
+                current_tokens += sub_tokens
 
-                # 如果待处理字幕本身不超过限制，则作为新块的开始
-                pending_srt = "".join(s.to_srt() for s in pending_subs)
-                pending_tokens = self._count_tokens(pending_srt)
+        if current:
+            chunks.append(current)
 
-                if pending_tokens <= max_tokens:
-                    if is_sentence_end:
-                        chunks.append(pending_subs)
-                        pending_subs = []
-                        current_chunk = []
-                    else:
-                        current_chunk = pending_subs
-                        pending_subs = []
-                else:
-                    # 待处理字幕太大，需要进一步拆分
-                    # 这种情况应该很少发生，因为我们已经处理了单个字幕超限的情况
-                    for p_sub in pending_subs:
-                        p_srt = p_sub.to_srt()
-                        p_tokens = self._count_tokens(p_srt)
-
-                        if (
-                            current_chunk
-                            and self._count_tokens(
-                                "".join(s.to_srt() for s in current_chunk)
-                            )
-                            + p_tokens
-                            > max_tokens
-                        ):
-                            chunks.append(current_chunk)
-                            current_chunk = [p_sub]
-                        else:
-                            current_chunk.append(p_sub)
-
-                    pending_subs = []
-
-        # 处理剩余的字幕
-        if pending_subs:
-            if (
-                current_chunk
-                and self._count_tokens(
-                    "".join(s.to_srt() for s in current_chunk + pending_subs)
+    # Post-process: merge very small chunks (e.g. length 1) with neighbors to
+    # avoid many tiny chunks. Heuristic: ensure each chunk has at least
+        # min_items or merge with previous when possible.
+        min_items = 3
+        merged: List[List[Subtitle]] = []
+        for c in chunks:
+            if not merged:
+                merged.append(c)
+                continue
+            if len(c) < min_items:
+                # try to merge into previous chunk if token budget allows
+                prev = merged[-1]
+                combined_tokens = self._count_tokens(
+                    "".join(s.to_srt() for s in prev + c)
                 )
-                <= max_tokens
-            ):
-                current_chunk.extend(pending_subs)
+                if combined_tokens <= max_tokens:
+                    merged[-1] = prev + c
+                else:
+                    # otherwise, try to merge with next by appending here
+                    merged.append(c)
             else:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                current_chunk = pending_subs
+                merged.append(c)
 
-        # 添加最后一个块
-        if current_chunk:
-            chunks.append(current_chunk)
-
-        return chunks
+        return merged
