@@ -65,9 +65,7 @@ async def _trans_file(
                 progress.update(task, description=resp.content)
 
             if getattr(resp, "error", None):
-                console.print(
-                    f"[bold red]错误:[/bold red] {getattr(resp, 'error')}"
-                )
+                console.print(f"[bold red]错误:[/bold red] {getattr(resp, 'error')}")
                 raise typer.Exit(1)
 
     if out_path is None:
@@ -155,9 +153,7 @@ def merge_file(
         if out:
             out_path = out
             if out_path.is_dir():
-                out_file = (
-                    out_path / file.with_stem(f"{file.stem}_merged").name
-                )
+                out_file = out_path / file.with_stem(f"{file.stem}_merged").name
             else:
                 out_file = out_path
         else:

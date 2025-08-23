@@ -14,8 +14,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # 模型提供商配置
-    MODEL_PROVIDER: Literal[
-        "mistral", "openai", "deepseek", "kimi"] = "mistral"
+    MODEL_PROVIDER: Literal["mistral", "openai", "deepseek", "kimi"] = "mistral"
 
     # OpenAI 配置
     OPENAI_API_KEY: str = "your-api-key-here"
@@ -42,8 +41,7 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.5-flash"
 
     # 日志设置
-    LOG_LEVEL: Literal[
-        "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     LOG_FORMAT: Literal["json", "console"] = "json"
     LOG_FILE: Optional[Path] = None
     JSON_LOGS: bool = True
