@@ -23,7 +23,8 @@ World
 
         wf = SubtitleWorkflow(max_tokens=100)
 
-        # mock SrtService.split: return a single chunk (list of Subtitle objects)
+        # mock SrtService.split: return a single chunk
+        #  (list of Subtitle objects)
         async def fake_split(path, max_tokens):
             # reuse parser to parse and return a single chunk
             subs = wf.srt_service.parser.parse(srt_content)

@@ -17,5 +17,6 @@ class TestSubtitleWriter:
         writer = SubtitleWriter()
         fp = tmp_path / "out2.srt"
         loop = asyncio.get_event_loop()
-        out = loop.run_until_complete(writer.write(str(fp), [make_sub(1, 0, 1, "hi")]))
+        out = loop.run_until_complete(
+            writer.write(str(fp), [make_sub(1, 0, 1, "hi")]))
         assert out == str(fp)
