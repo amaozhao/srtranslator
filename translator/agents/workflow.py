@@ -1,588 +1,191 @@
-import re
 from pathlib import Path
-from typing import AsyncGenerator, Optional, List, Tuple
+from typing import AsyncGenerator, List, Optional
 
 from agno.workflow import RunResponse, Workflow
 
+from translator.core.logger import workflow_logger as logger
+from translator.services.subtitle.parser import Subtitle
+from translator.services.subtitle.srt import SrtService
+
 from .proofer import get_proofer
 from .translator import get_translator
-from translator.core.logger import workflow_logger as logger
-from translator.services.subtitle.srt import SrtService
-from translator.services.subtitle.parser import (
-    RGX_INDEX,
-    RGX_POSSIBLE_CRLF,
-    RGX_TIMESTAMP,
-    Subtitle,
-)
 
 
 class SubtitleWorkflow(Workflow):
     """
-    A workflow for processing subtitles using AI agents.
+    一个使用 AI 代理处理字幕的工作流。
     """
 
-    # 定义匹配 SRT 块开始的正则表达式
-    SRT_BLOCK_START_PATTERN = re.compile(
-        r"\s*({idx})\s*{eof}({ts}) *-[ -] *> *({ts})".format(
-            idx=RGX_INDEX, ts=RGX_TIMESTAMP, eof=RGX_POSSIBLE_CRLF
-        )
-    )
-
-    # 定义匹配代码块的正则表达式
-    CODE_BLOCK_PATTERN = re.compile(r"```(?:srt)?\s*\n([\s\S]*?)\n\s*```")
-
-    def __init__(self, max_tokens: int = 2500):
+    def __init__(self, tokens: int = 2500):
         """
-        Initialize the SubtitleWorkflow.
+        初始化 SubtitleWorkflow。
 
         Args:
-            max_tokens: Maximum number of tokens per chunk for processing
+            tokens: 每个处理块的最大 token 数
         """
         super().__init__()
         self.srt_service = SrtService()
-        self.max_tokens = max_tokens
+        self.tokens = tokens
 
     async def arun(
         self,
         input_path: str,
         output_path: Optional[str] = None,
-        source_lang: str = "en",
-        target_lang: str = "zh",
+        source_lang: str = "English",
+        target_lang: str = "Chinese",
     ) -> AsyncGenerator[RunResponse, None]:
-        """Async generator entry point for this workflow.
-
-        This yields the same items as `_arun_impl` and is the
-        normal method consumers call.
-        """
-        async for resp in self._arun_impl(
-            input_path, output_path, source_lang, target_lang
-        ):
-            yield resp
-
-    async def _arun_impl(
-        self,
-        input_path: str,
-        output_path: Optional[str],
-        source_lang: str = "en",
-        target_lang: str = "zh",
-    ) -> AsyncGenerator[RunResponse, None]:
-        """实际的处理实现"""
+        """异步生成器入口点，处理字幕并分块返回状态。"""
         # 解析输入/输出路径
-        out_file = await self._resolve_output_path(input_path, output_path, target_lang)
+        output_file = await self._get_out_path(input_path, output_path, target_lang)
 
-        yield RunResponse(
-            content=f"开始处理字幕文件: {input_path}",
-            run_id=self.run_id,
-        )
+        yield RunResponse(content=f"开始处理字幕文件: {input_path}", run_id=self.run_id)
 
-        # 1. Split into manageable chunks
+        # 1. 分割字幕为可处理的块
         yield RunResponse(content="分割字幕为处理块...", run_id=self.run_id)
-        chunks = await self._split_subtitle(input_path)
+        chunks = await self._split_subtitles(input_path)
         if not chunks:
-            yield RunResponse(
-                content="字幕分块失败，流程终止。",
-                run_id=self.run_id,
-            )
+            yield RunResponse(content="字幕分块失败，流程终止。", run_id=self.run_id)
             return
 
         yield RunResponse(content=f"分割为 {len(chunks)} 个块。", run_id=self.run_id)
-        processed_subtitles = []
+        final_subs = []
 
-        # 2. Process each chunk
+        # 2. 依次处理每个块
         for i, chunk in enumerate(chunks, 1):
-            yield RunResponse(
-                content=f"处理第 {i}/{len(chunks)} 块...", run_id=self.run_id
-            )
+            yield RunResponse(content=f"处理第 {i}/{len(chunks)} 块...", run_id=self.run_id)
 
-            processed_chunk = await self._process_chunk_with_validation(
-                chunk, i, input_path, source_lang, target_lang
-            )
+            process_chunk = await self._run_chunk(chunk, i, input_path, target_lang)
 
-            if not processed_chunk:
-                yield RunResponse(
-                    content=f"第 {i} 块字幕处理失败，流程终止。",
-                    run_id=self.run_id,
-                )
+            if not process_chunk:
+                yield RunResponse(content=f"第 {i} 块字幕处理失败，流程终止。", run_id=self.run_id)
                 return
 
-            processed_subtitles.extend(processed_chunk)
-            yield RunResponse(
-                content=f"已完成第 {i}/{len(chunks)} 块。", run_id=self.run_id
-            )
+            final_subs.extend(process_chunk)
+            yield RunResponse(content=f"已完成第 {i}/{len(chunks)} 块。", run_id=self.run_id)
 
-        # 3. Save the processed subtitles
-        yield RunResponse(
-            content=f"保存处理后的字幕到 {out_file}...", run_id=self.run_id
-        )
-        await self.srt_service.write(str(out_file), processed_subtitles)
-        yield RunResponse(
-            content=f"全部完成，输出文件: {out_file}",
-            run_id=self.run_id,
-        )
+        # 3. 保存处理后的字幕
+        yield RunResponse(content=f"保存处理后的字幕到 {output_file}...", run_id=self.run_id)
+        await self.srt_service.write(str(output_file), final_subs)
+        yield RunResponse(content=f"全部完成，输出文件: {output_file}", run_id=self.run_id)
 
-    async def _resolve_output_path(
-        self, input_path: str, output_path: Optional[str], target_lang: str
-    ) -> Path:
+    async def _get_out_path(self, in_path: str, out_path: Optional[str], lang: str) -> Path:
         """解析输出路径"""
-        in_path_obj = Path(input_path)
-        if output_path:
-            out_path_obj = Path(output_path)
-            # 如果给定的是目录，保留原始目录结构并添加后缀
-            if out_path_obj.exists() and out_path_obj.is_dir():
-                out_file = (
-                    out_path_obj
-                    / in_path_obj.with_stem(f"{in_path_obj.stem}_{target_lang}").name
-                )
+        input_path_obj = Path(in_path)
+        if out_path:
+            output_path_obj = Path(out_path)
+            if output_path_obj.exists() and output_path_obj.is_dir():
+                output_file = output_path_obj / input_path_obj.with_stem(f"{input_path_obj.stem}_{lang}").name
             else:
-                # 当作文件路径处理（即使不存在，也按文件路径写入）
-                out_file = out_path_obj
+                output_file = output_path_obj
         else:
-            out_file = in_path_obj.with_stem(f"{in_path_obj.stem}_{target_lang}")
+            output_file = input_path_obj.with_stem(f"{input_path_obj.stem}_{lang}")
 
-        return out_file
+        return output_file
 
-    async def _split_subtitle(self, input_path: str) -> Optional[List]:
+    async def _split_subtitles(self, in_path: str) -> Optional[List[List[Subtitle]]]:
         """分割字幕为处理块"""
-        return await self.srt_service.split(input_path, self.max_tokens)
+        return await self.srt_service.split(in_path, self.tokens)
 
-    async def _process_chunk_with_validation(
-        self,
-        chunk: List[Subtitle],
-        chunk_index: int,
-        input_path: str,
-        source_lang: str,
-        target_lang: str,
+    async def _run_chunk(
+        self, chunk: List[Subtitle], chunk_index: int, in_path: str, lang: str
     ) -> Optional[List[Subtitle]]:
-        """处理单个字幕块并进行验证"""
-        chunk_srt = self.srt_service.parser.compose(chunk)
-        if not chunk_srt:
-            return None
+        """处理单个字幕块并验证结果。"""
+        chunk_count = len(chunk)
+        logger.info(f"第 {chunk_index} 块原始字幕条数: {chunk_count}")
 
-        # 计算原始 chunk 的字幕条数，用于后续验证和缓存匹配
-        original_count, orig_parsed = await self._get_original_chunk_info(chunk_srt)
-        logger.info(
-            f"第 {chunk_index} 块原始字幕条数: {original_count} (用于断点续传校验)"
-        )
-
-        # 先尝试从缓存中加载已处理的 chunk（支持断点续传）
-        processed_srt = await self._try_get_cached_chunk(
-            input_path, chunk_index, target_lang, original_count, orig_parsed
-        )
-
-        # 如果没有可用缓存则执行处理
-        if processed_srt is None:
-            processed_srt = await self._process_chunk(
-                chunk_srt, source_lang, target_lang
-            )
-
-        if not processed_srt:
-            return None
-
-        processed_chunk = self.srt_service.parser.parse(processed_srt)
-        if not processed_chunk:
-            return None
-
-        # 校验条目数与时间戳是否保持原状
-        processed_chunk = await self._validate_and_fix_chunk(
-            processed_chunk,
-            orig_parsed,
-            original_count,
-            chunk_srt,
-            source_lang,
-            target_lang,
-            chunk_index,
-        )
-
-        if not processed_chunk:
-            return None
-
-        # 保存处理后的 chunk 到缓存（如果不是来自缓存）
-        await self._save_chunk_to_cache_if_needed(
-            input_path, chunk_index, target_lang, processed_srt, orig_parsed
-        )
-
-        return processed_chunk
-
-    async def _get_original_chunk_info(
-        self, chunk_srt: str
-    ) -> Tuple[int, List[Subtitle]]:
-        """获取原始块的信息"""
-        try:
-            orig_parsed = self.srt_service.parser.parse(chunk_srt) or []
-            original_count = len(orig_parsed)
-        except Exception:
-            original_count = 0
-            orig_parsed = []
-
-        return original_count, orig_parsed
-
-    async def _try_get_cached_chunk(
-        self,
-        input_path: str,
-        chunk_index: int,
-        target_lang: str,
-        original_count: int,
-        orig_parsed: List[Subtitle],
-    ) -> Optional[str]:
-        """尝试从缓存获取已处理的块"""
-        try:
-            cached = await self.srt_service.get_processed_chunk(
-                input_path, chunk_index, target_lang
-            )
-        except Exception:
-            cached = None
+        # 1. 尝试从缓存加载已处理的 SRT 块
+        cached = await self._get_cache(in_path, chunk_index, lang)
 
         if cached:
-            try:
-                cached_parsed = self.srt_service.parser.parse(cached) or []
-                if len(cached_parsed) == original_count:
-                    logger.info(f"第 {chunk_index} 块命中缓存，跳过处理")
-                    return cached
-                else:
-                    logger.warning(
-                        (
-                            f"第 {chunk_index} 块缓存条目数不匹配"
-                            f"（缓存: {len(cached_parsed)} "
-                            f"vs 原始: {original_count}），忽略缓存并重新处理"
-                        )
-                    )
-            except Exception:
-                logger.warning(f"第 {chunk_index} 块缓存解析失败，忽略缓存并重新处理")
-
-        return None
-
-    async def _validate_and_fix_chunk(
-        self,
-        processed_chunk: List[Subtitle],
-        orig_parsed: List[Subtitle],
-        original_count: int,
-        chunk_srt: str,
-        source_lang: str,
-        target_lang: str,
-        chunk_index: int,
-    ) -> Optional[List[Subtitle]]:
-        """验证并修复处理后的块"""
-        # 校验条目数是否匹配
-        if len(processed_chunk) != original_count:
-            logger.warning(
-                (
-                    f"第 {chunk_index} 块处理后的条目数不匹配（处理后: {len(processed_chunk)} "
-                    f"vs 原始: {original_count}），尝试重试一次或映射回原始时间戳"
-                )
-            )
-            return await self._handle_count_mismatch(
-                processed_chunk,
-                orig_parsed,
-                original_count,
-                chunk_srt,
-                source_lang,
-                target_lang,
-                chunk_index,
-            )
-        else:
-            # 长度一致时，再做时间戳逐条比对
-            return await self._handle_timestamp_mismatch(
-                processed_chunk,
-                orig_parsed,
-                chunk_srt,
-                source_lang,
-                target_lang,
-                chunk_index,
-            )
-
-    async def _handle_count_mismatch(
-        self,
-        processed_chunk: List[Subtitle],
-        orig_parsed: List[Subtitle],
-        original_count: int,
-        chunk_srt: str,
-        source_lang: str,
-        target_lang: str,
-        chunk_index: int,
-    ) -> Optional[List[Subtitle]]:
-        """处理条目数不匹配的情况"""
-        # 尝试重试一次
-        try:
-            retry_srt = await self._process_chunk(chunk_srt, source_lang, target_lang)
-            retry_parsed = self.srt_service.parser.parse(retry_srt) or []
-            if len(retry_parsed) == original_count:
-                return retry_parsed
+            _chunk = self.srt_service.parser.parse(cached)
+            if _chunk and len(_chunk) == chunk_count:
+                logger.info(f"第 {chunk_index} 块命中缓存，跳过处理")
+                return _chunk
             else:
-                raise RuntimeError("retry count mismatch")
-        except Exception:
-            # 最后保守策略：将翻译文本逐条映射回原始时间戳
-            try:
-                mapped = []
-                for orig, proc in zip(orig_parsed, processed_chunk):
-                    mapped.append(
-                        Subtitle(
-                            index=orig.index,
-                            start=orig.start,
-                            end=orig.end,
-                            content=proc.content,
-                            proprietary=orig.proprietary,
-                        )
-                    )
-                logger.warning(
-                    f"第 {chunk_index} 块已用原始时间戳映射翻译文本，继续流程"
-                )
-                return mapped
-            except Exception:
-                logger.exception(f"第 {chunk_index} 块最终修复失败")
-                return None
+                logger.warning("缓存解析失败或条目数不匹配，将重新处理。")
 
-    async def _handle_timestamp_mismatch(
-        self,
-        processed_chunk: List[Subtitle],
-        orig_parsed: List[Subtitle],
-        chunk_srt: str,
-        source_lang: str,
-        target_lang: str,
-        chunk_index: int,
-    ) -> Optional[List[Subtitle]]:
-        """处理时间戳不匹配的情况"""
-        mismatch = False
-        for o, p in zip(orig_parsed, processed_chunk):
-            try:
-                if p.start != o.start or p.end != o.end:
-                    mismatch = True
-                    break
-            except Exception:
-                mismatch = True
-                break
-
-        if mismatch:
-            logger.warning(f"第 {chunk_index} 块处理后存在时间戳不匹配，尝试重试一次")
-            return await self._retry_or_fallback(
-                processed_chunk,
-                orig_parsed,
-                chunk_srt,
-                source_lang,
-                target_lang,
-                chunk_index,
-            )
-
-        return processed_chunk
-
-    async def _retry_or_fallback(
-        self,
-        processed_chunk: List[Subtitle],
-        orig_parsed: List[Subtitle],
-        chunk_srt: str,
-        source_lang: str,
-        target_lang: str,
-        chunk_index: int,
-    ) -> Optional[List[Subtitle]]:
-        """重试处理或回退到映射策略"""
-        try:
-            retry_srt = await self._process_chunk(chunk_srt, source_lang, target_lang)
-            retry_parsed = self.srt_service.parser.parse(retry_srt) or []
-            good = True
-            if len(retry_parsed) == len(orig_parsed):
-                for o, r in zip(orig_parsed, retry_parsed):
-                    if r.start != o.start or r.end != o.end:
-                        good = False
-                        break
-            else:
-                good = False
-
-            if good:
-                return retry_parsed
-            else:
-                # fallback to mapping
-                mapped = []
-                for orig, proc in zip(orig_parsed, processed_chunk):
-                    mapped.append(
-                        Subtitle(
-                            index=orig.index,
-                            start=orig.start,
-                            end=orig.end,
-                            content=proc.content,
-                            proprietary=orig.proprietary,
-                        )
-                    )
-                logger.warning(
-                    f"第 {chunk_index} 块已用原始时间戳映射翻译文本，继续流程"
-                )
-                return mapped
-        except Exception:
-            logger.exception(f"第 {chunk_index} 块重试处理失败")
+        # 2. 如果缓存不可用，调用代理进行翻译
+        final_text = await self._call_agents(chunk, chunk_count)
+        if not final_text:
             return None
 
-    async def _save_chunk_to_cache_if_needed(
-        self,
-        input_path: str,
-        chunk_index: int,
-        target_lang: str,
-        processed_srt: str,
-        orig_parsed: List[Subtitle],
-    ) -> None:
-        """如果需要，将处理后的块保存到缓存"""
-        try:
-            cached = await self.srt_service.get_processed_chunk(
-                input_path, chunk_index, target_lang
-            )
-            if cached != processed_srt:
-                await self.srt_service.save_processed_chunk(
-                    input_path, chunk_index, target_lang, processed_srt
+        # 3. 验证并重组字幕
+        final_texts = final_text.split("||")
+        if len(final_texts) != chunk_count:
+            logger.warning(f"第 {chunk_index} 块代理返回的条目数不匹配，处理失败。")
+            return None
+
+        final_subs = []
+        for i, text in enumerate(final_texts):
+            item_from_chunk = chunk[i]
+            # 合并原始内容和翻译内容
+            new_content = f"{item_from_chunk.content.strip()}\n{text.strip()}"
+            final_subs.append(
+                Subtitle(
+                    index=item_from_chunk.index,
+                    start=item_from_chunk.start,
+                    end=item_from_chunk.end,
+                    content=new_content,
+                    proprietary=item_from_chunk.proprietary,
                 )
-        except Exception:
-            logger.warning(f"保存第 {chunk_index} 块缓存失败，继续不阻塞流程")
+            )
 
-    # 为兼容底层 Workflow 的调用约定，提供一个带参数的 generator 方法
-    async def arun_workflow_generator(
-        self,
-        input_path: str,
-        output_path: Optional[str] = None,
-        source_lang: str = "en",
-        target_lang: str = "zh",
-    ) -> AsyncGenerator[RunResponse, None]:
-        """兼容层：将调用转发到实现层 `_arun_impl`。"""
-        async for resp in self._arun_impl(
-            input_path, output_path, source_lang, target_lang
-        ):
-            yield resp
+        # 4. 将处理后的 SRT 块保存到缓存
+        cache_content = self.srt_service.parser.compose(final_subs)
+        await self._save_cache(in_path, chunk_index, lang, cache_content)
 
-    def is_valid_srt_format(self, content: str) -> tuple[bool, str]:
-        """
-        验证内容是否符合 SRT 格式，如果不符合则尝试提取有效的 SRT 部分。
+        return final_subs
 
-        Args:
-            content: 要验证的内容
-
-        Returns:
-            (是否有效, 错误信息)
-        """
-        if not content or not content.strip():
-            return False, "内容为空"
-
-        # 首先尝试直接解析
+    async def _get_cache(self, in_path: str, index: int, lang: str) -> Optional[str]:
+        """尝试从缓存获取已处理的 SRT 格式块"""
         try:
-            subtitle = self.srt_service.parser.parse(content)
-            if subtitle:
-                return True, ""
-        except Exception:
-            pass
-
-        # 尝试提取 SRT 内容
-        try:
-            # 查找第一个匹配项
-            match = self.SRT_BLOCK_START_PATTERN.search(content)
-            if match:
-                # 从匹配到的第一个字幕编号开始截取内容
-                start_pos = match.start(1)
-                extracted_content = content[start_pos:]
-
-                # 尝试解析提取的内容
-                subtitle = self.srt_service.parser.parse(extracted_content)
-                if subtitle:
-                    return True, ""
-
-            # 尝试从代码块中提取 SRT 内容
-            code_match = self.CODE_BLOCK_PATTERN.search(content)
-            if code_match:
-                extracted_content = code_match.group(1)
-                subtitle = self.srt_service.parser.parse(extracted_content)
-                if subtitle:
-                    return True, ""
-
-            return False, "未找到有效的 SRT 格式内容"
+            cached = await self.srt_service.get_processed_chunk(in_path, index, lang)
+            if cached and self.srt_service.parser.parse(cached):
+                return cached
         except Exception as e:
-            return False, f"SRT 内容提取失败: {str(e)}"
+            logger.warning(f"尝试从缓存获取失败: {e}")
+        return None
 
-    def _extract_valid_srt(
-        self, content: str, label: str = "Agent"
-    ) -> tuple[bool, str, str]:
-        """
-        尝试验证并从给定文本中提取有效的 SRT 内容。
+    async def _save_cache(self, in_path: str, index: int, lang: str, content: str) -> None:
+        """如果需要，将处理后的 SRT 块保存到缓存"""
+        try:
+            await self.srt_service.save_processed_chunk(in_path, index, lang, content)
+        except Exception as e:
+            logger.warning(f"保存第 {index} 块缓存失败: {e}")
 
-        Returns:
-            (is_valid, srt_content_or_original, error_msg)
-        """
-        # 先尝试直接验证（该方法本身也会尝试解析和提取）
-        is_valid, error_msg = self.is_valid_srt_format(content)
-        if is_valid:
-            return True, content, ""
-
-        # 1) 尝试通过匹配第一个字幕块开始截取
-        match = self.SRT_BLOCK_START_PATTERN.search(content)
-        if match:
-            start_pos = match.start(1)
-            extracted = content[start_pos:]
-            try:
-                subtitle = self.srt_service.parser.parse(extracted)
-                if subtitle:
-                    logger.info(f"成功从 {label} 输出中提取有效的 SRT 内容")
-                    return True, extracted, ""
-            except Exception:
-                pass
-
-        # 2) 尝试从代码块中提取
-        code_match = self.CODE_BLOCK_PATTERN.search(content)
-        if code_match:
-            extracted = code_match.group(1)
-            try:
-                subtitle = self.srt_service.parser.parse(extracted)
-                if subtitle:
-                    logger.info(f"成功从 {label} 代码块中提取有效的 SRT 内容")
-                    return True, extracted, ""
-            except Exception:
-                pass
-
-        # 都失败，返回原始内容和错误信息
-        return False, content, error_msg
-
-    async def _process_chunk(
-        self, chunk_srt: str, source_lang: str, target_lang: str
-    ) -> str:
-        """
-        Process a single subtitle chunk with agents in sequence,
-        with detailed logging.
-        Args:
-            chunk_srt: SRT string for the chunk
-            source_lang: Source language
-            target_lang: Target language
-        Returns:
-            Processed subtitles in SRT format
-        """
+    async def _call_agents(self, chunk: List[Subtitle], item_count: int, retry_count: int = 0) -> str:
+        """调用代理进行拼写检查和翻译，并处理重试。"""
+        # 从 SRT 块中提取纯文本内容
+        input_text = "||".join([item.content for item in chunk])
 
         # 1. 拼写检查 (Proofer)
-        logger.info("开始拼写检查")
-        proof = await get_proofer().arun(chunk_srt)
-        proofed_content = proof.content
-
-        # 记录 Proofer 返回的原始内容（截取前500个字符）
-        logger.info(f"Proofer 返回内容: {proofed_content}")
-
-        # 验证 Proofer 输出格式并尝试提取有效 SRT
-        is_valid, proofed_content, error_msg = self._extract_valid_srt(
-            proofed_content, label="Proofer"
-        )
-        if not is_valid:
-            # 提取失败：回退到原始 chunk
-            logger.warning(f"Proofer 输出格式无效: {error_msg}，回退到上一步输出")
-            logger.debug(f"Proofer 完整输出内容: '''{proofed_content}'''")
-            proofed_content = chunk_srt
-        else:
-            logger.info("Proofer 输出格式有效")
+        try:
+            logger.info("开始拼写检查...")
+            proof_result = await get_proofer().arun(input_text)
+            proofed = proof_result.content.proofed
+            logger.info(f"Proofer 返回内容: {proofed[:150]}...")
+        except Exception as e:
+            logger.error(f"Proofer 调用失败: {e}。回退到原始内容。")
+            proofed = input_text
 
         # 2. 翻译 (Translator)
-        logger.info("开始翻译处理")
-        translated = await get_translator().arun(proofed_content)
-        translated_content = translated.content
+        try:
+            logger.info("开始翻译处理...")
+            trans_result = await get_translator().arun(proofed)
+            translated = trans_result.content.translated
+            logger.info(f"Translator 返回内容: {translated[:150]}...")
+        except Exception as e:
+            logger.error(f"Translator 调用失败: {e}。返回空字符串。")
+            return ""
 
-        # 记录 Translator 返回的原始内容
-        logger.info(f"Translator 返回内容: {translated_content}")
+        # 3. 验证翻译结果数量
+        trans_texts = translated.split("||")
+        if len(trans_texts) != item_count:
+            logger.warning(f"翻译结果条目数不匹配（翻译后: {len(trans_texts)} vs 原始: {item_count}）。尝试重试...")
+            if retry_count < 2:
+                return await self._call_agents(chunk, item_count, retry_count + 1)
+            else:
+                logger.error("重试次数耗尽，翻译失败。")
+                return ""
 
-        # 验证 Translator 输出格式并尝试提取有效 SRT
-        is_valid, translated_content, error_msg = self._extract_valid_srt(
-            translated_content, label="Translator"
-        )
-        if not is_valid:
-            logger.warning(f"Translator 输出格式无效: {error_msg}，回退到上一步输出")
-            logger.debug(f"Translator 完整输出内容: '''{translated_content}'''")
-            translated_content = proofed_content
-        else:
-            logger.info("Translator 输出格式有效")
-
-        return translated_content
+        return translated

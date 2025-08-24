@@ -3,8 +3,14 @@ from agno.agent import Agent
 # from agno.models.deepseek import DeepSeek
 # from agno.models.openai.like import OpenAILike
 from agno.models.google import Gemini
+from pydantic import BaseModel, Field
 
 from translator.core.config import settings
+
+
+class ProofSubtitle(BaseModel):
+    proofed: str = Field(..., description="检查并修正后的字幕内容")
+
 
 # 直接创建 DeepSeek 模型实例
 # model = DeepSeek(
@@ -15,23 +21,18 @@ from translator.core.config import settings
 #     api_key=settings.KIMI_API_KEY,
 #     base_url=settings.KIMI_BASE_URL,
 # )
-model = Gemini(
-    id=settings.GEMINI_MODEL,
-    api_key=settings.GEMINI_API_KEY,
+model = Gemini(id=settings.GEMINI_MODEL, api_key=settings.GEMINI_API_KEY)
+
+description = (
+    "你是一个字幕修正专家，专门负责修正字幕中的特定错误。"
+    "你的任务是严格地检查和修正文本，但绝不改变其内容、语法结构、断句或原始语言。"
 )
-
-
-proofer_instructions = [
-    "角色：专业的错词检查专家。",
-    "任务：仅负责修正字幕中的错词、错字、拼写错误和重复词语。",
-    "处理范围：不修改断句、语法结构或任何其他内容。不进行翻译，保持原始语言不变。",
-    "输出格式：必须始终返回完整的 SRT 格式字幕，严格保持原始编号、时间戳和结构不变。",
-    "只修改内容中的错误。",
-    "重要提示：",
-    "1. 如果字幕中没有需要修正的错误，原样返回输入内容。",
-    "2. 你的输出必须仅包含 SRT 格式的字幕内容，不包含任何解释、说明或注释。",
-    "3. 即使你认为输入有问题，也直接返回 SRT 格式的结果，绝不拒绝或返回错误消息。",
-    "4. 永远不要返回'我不能执行这个任务'类的消息，始终返回 SRT 格式的内容。",
+instructions = [
+    "处理规则：",
+    "1. 仔细检查输入的字符串。如果发现需要修正的错误，请进行修正。",
+    "2. 如果没有需要修正的错误，或者无法确定，则原样返回输入的字符串。",
+    "3. 你的输出必须**仅**包含修正后的字符串，不添加任何解释、说明或注释。",
+    "4. 永远不要返回错误信息或拒绝执行任务的提示。",
 ]
 
 
@@ -40,10 +41,12 @@ def get_proofer():
         name="Proofer",
         role="错词检查专家",
         model=model,
-        markdown=False,
-        instructions=proofer_instructions,
-        use_json_mode=False,
+        # markdown=False,
+        description=description,
+        instructions=instructions,
+        use_json_mode=True,
         reasoning=False,
+        response_model=ProofSubtitle,
         # debug_mode=True,
     )
     return Proofer

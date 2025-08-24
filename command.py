@@ -20,7 +20,7 @@ app = typer.Typer(help="Translator Command - 字幕翻译工具")
 console = Console()
 
 
-@app.command("file")
+@app.command("trans-file")
 def trans_file(
     file: Path = typer.Argument(..., help="SRT文件"),
     out: Optional[Path] = typer.Option(None, "-o", help="输出路径"),
@@ -42,16 +42,12 @@ def trans_file(
     asyncio.run(_trans_file(file, out, src, tgt, tokens))
 
 
-async def _trans_file(
-    in_path: Path, out_path: Optional[Path], src: str, tgt: str, tokens: int
-):
+async def _trans_file(in_path: Path, out_path: Optional[Path], src: str, tgt: str, tokens: int):
     """处理单个文件"""
     wf = SubtitleWorkflow(max_tokens=tokens)
 
     with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}[/bold blue]"),
-        console=console,
+        SpinnerColumn(), TextColumn("[bold blue]{task.description}[/bold blue]"), console=console
     ) as progress:
         task = progress.add_task("处理中", total=None)
 
@@ -70,14 +66,12 @@ async def _trans_file(
 
     if out_path is None:
         generated = in_path.with_stem(f"{in_path.stem}_{tgt}")
-        console.print(
-            f"[bold green]完成:[/bold green] 输出已生成于 {generated}（输入同目录）"
-        )
+        console.print(f"[bold green]完成:[/bold green] 输出已生成于 {generated}（输入同目录）")
     else:
         console.print(f"[bold green]完成:[/bold green] {out_path}")
 
 
-@app.command("dir")
+@app.command("trans-dir")
 def trans_dir(
     dir: Path = typer.Argument(..., help="SRT目录"),
     out_dir: Optional[Path] = typer.Option(None, "-o", help="输出目录"),
@@ -96,9 +90,7 @@ def trans_dir(
     asyncio.run(_trans_dir(dir, out_dir, src, tgt, tokens))
 
 
-async def _trans_dir(
-    in_dir: Path, out_dir: Optional[Path], src: str, tgt: str, tokens: int
-):
+async def _trans_dir(in_dir: Path, out_dir: Optional[Path], src: str, tgt: str, tokens: int):
     """处理目录中的所有文件"""
     files = list(in_dir.rglob("*.srt"))
 
@@ -121,13 +113,7 @@ async def _trans_dir(
         console.print(f"[{i}/{len(files)}] 处理: {in_file}")
 
         try:
-            await _trans_file(
-                in_path=in_file,
-                out_path=out_file,
-                src=src,
-                tgt=tgt,
-                tokens=tokens,
-            )
+            await _trans_file(in_path=in_file, out_path=out_file, src=src, tgt=tgt, tokens=tokens)
         except Exception as e:
             console.print(f"[bold red]错误:[/bold red] {in_file}: {str(e)}")
 
@@ -168,8 +154,7 @@ def merge_file(
 
 @app.command("merge-dir")
 def merge_dir(
-    dir: Path = typer.Argument(..., help="SRT目录"),
-    out_dir: Optional[Path] = typer.Option(None, "-o", help="输出目录"),
+    dir: Path = typer.Argument(..., help="SRT目录"), out_dir: Optional[Path] = typer.Option(None, "-o", help="输出目录")
 ):
     """递归合并目录下所有 SRT 文件并保存合并结果到 out_dir（保持相对结构）。"""
     if not dir.exists() or not dir.is_dir():

@@ -7,6 +7,10 @@ set -e
 echo "清理 .pytest_cache ..."
 rm -rf .pytest_cache
 
+# 删除 ruff_cache 缓存
+echo "清理 .ruff_cache ..."
+rm -rf .ruff_cache
+
 # 删除所有__pycache__目录
 echo "清理所有 __pycache__ ..."
 find . -type d -name "__pycache__" -exec rm -rf {} +

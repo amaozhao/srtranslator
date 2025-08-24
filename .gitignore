@@ -211,3 +211,6 @@ __marimo__/
 
 # PyCharm
 .idea/
+
+# ruff
+.ruff.toml
