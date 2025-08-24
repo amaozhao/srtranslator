@@ -68,8 +68,7 @@ class SubtitleWorkflow(Workflow):
     ) -> AsyncGenerator[RunResponse, None]:
         """实际的处理实现"""
         # 解析输入/输出路径
-        out_file = await self._resolve_output_path(
-            input_path, output_path, target_lang)
+        out_file = await self._resolve_output_path(input_path, output_path, target_lang)
 
         yield RunResponse(
             content=f"开始处理字幕文件: {input_path}",
@@ -132,15 +131,13 @@ class SubtitleWorkflow(Workflow):
             if out_path_obj.exists() and out_path_obj.is_dir():
                 out_file = (
                     out_path_obj
-                    / in_path_obj.with_stem(
-                        f"{in_path_obj.stem}_{target_lang}").name
+                    / in_path_obj.with_stem(f"{in_path_obj.stem}_{target_lang}").name
                 )
             else:
                 # 当作文件路径处理（即使不存在，也按文件路径写入）
                 out_file = out_path_obj
         else:
-            out_file = in_path_obj.with_stem(
-                f"{in_path_obj.stem}_{target_lang}")
+            out_file = in_path_obj.with_stem(f"{in_path_obj.stem}_{target_lang}")
 
         return out_file
 
@@ -162,9 +159,7 @@ class SubtitleWorkflow(Workflow):
             return None
 
         # 计算原始 chunk 的字幕条数，用于后续验证和缓存匹配
-        original_count, orig_parsed = await self._get_original_chunk_info(
-            chunk_srt
-        )
+        original_count, orig_parsed = await self._get_original_chunk_info(chunk_srt)
         logger.info(
             f"第 {chunk_index} 块原始字幕条数: {original_count} (用于断点续传校验)"
         )
@@ -308,8 +303,7 @@ class SubtitleWorkflow(Workflow):
         """处理条目数不匹配的情况"""
         # 尝试重试一次
         try:
-            retry_srt = await self._process_chunk(
-                chunk_srt, source_lang, target_lang)
+            retry_srt = await self._process_chunk(chunk_srt, source_lang, target_lang)
             retry_parsed = self.srt_service.parser.parse(retry_srt) or []
             if len(retry_parsed) == original_count:
                 return retry_parsed
@@ -381,8 +375,7 @@ class SubtitleWorkflow(Workflow):
     ) -> Optional[List[Subtitle]]:
         """重试处理或回退到映射策略"""
         try:
-            retry_srt = await self._process_chunk(
-                chunk_srt, source_lang, target_lang)
+            retry_srt = await self._process_chunk(chunk_srt, source_lang, target_lang)
             retry_parsed = self.srt_service.parser.parse(retry_srt) or []
             good = True
             if len(retry_parsed) == len(orig_parsed):

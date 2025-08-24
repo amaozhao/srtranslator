@@ -25,8 +25,7 @@ class TestSubtitleParser:
         assert hasattr(first, "end")
         assert hasattr(first, "content")
         # 简单时间断言（第一个字幕从 0 开始）
-        assert first.start == timedelta(
-            hours=0, minutes=0, seconds=0, milliseconds=0)
+        assert first.start == timedelta(hours=0, minutes=0, seconds=0, milliseconds=0)
 
     def test_parse_invalid_timestamp_raises(self):
         parser = pmod.SubtitleParser()

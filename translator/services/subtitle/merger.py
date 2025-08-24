@@ -1,92 +1,76 @@
-from datetime import timedelta
 from typing import List
-
 from .parser import Subtitle
 
 
 class SubtitleMerger:
-    """字幕合并"""
+    """字幕合并器"""
 
     def merge(
-        self,
-        subtitles: List[Subtitle],
-        max_pause: timedelta = timedelta(seconds=0.7),
-        punct_end: str = ",，.。?？!！",
-        max_dur: timedelta = timedelta(seconds=15),
+        self, subtitles: List[Subtitle], punct_end: str = ",，.。?？!！;；"
     ) -> List[Subtitle]:
         """
-        智能合并时间上连续或重叠的字幕条目，旨在将逻辑上属于“一句话”但被分割的字幕合并。
-        合并逻辑考虑：
-        1. 相邻字幕之间的时间间隔。
-        2. 字幕内容是否以句子结束标点符号结尾。
-        3. 合并后的字幕总时长限制。
+        智能合并时间上连续的字幕条目，将逻辑上属于"一句话"但被分割的字幕合并。
+        合并逻辑只考虑字幕内容是否以给定的标点符号结尾。
 
         Args:
             subtitles: 原始 Subtitle 对象的列表。
-            max_pause: 允许合并的相邻字幕之间的最大暂停时间。
-                       如果字幕结束和下一个字幕开始之间的实际暂停时间超过此值，则不合并。
-                       默认为 0.7 秒。
-            punct_end: 严格的句子结束标点符号字符串。如果一个字幕以这些标点符号结尾，
-                       它通常被视为一个句子的结束，即使时间间隔很短，也不会与下一个字幕合并。
-                       可以设置为空字符串 "" 来禁用此检查。
-            max_dur: 单个合并后的字幕允许的最大持续时间。
-                     防止将非常长的多句话合并成一个字幕条目，这可能不利于阅读。
-                     默认为 15 秒。
+            punct_end: 标点符号字符串。如果一个字幕以这些标点符号结尾，
+                       它被视为一个句子的结束，不会与下一个字幕合并。
+                       默认为 ",，.。?？!！;；"。
 
         Returns:
-            List[Subtitle]: 合并后的 Subtitle 对象列表，其中逻辑上连续的短字幕已合并为更长的字幕。
+            List[Subtitle]: 合并后的 Subtitle 对象列表。
         """
         if not subtitles:
             return []
 
+        # 确保字幕按时间顺序排列
         sorted_subtitles = sorted(subtitles, key=lambda s: s.start)
 
-        merged_subtitles: List[Subtitle] = []
+        # 使用滑动窗口方法进行合并
+        result = []
+        window_start = 0
 
-        if not sorted_subtitles:
-            return []
+        for i in range(len(sorted_subtitles)):
+            current_content = sorted_subtitles[i].content.strip()
 
-        current_subtitle = sorted_subtitles[0]
+            # 检查当前字幕是否以标点符号结尾
+            ends_with_punct = False
+            if current_content and current_content[-1] in punct_end:
+                ends_with_punct = True
 
-        for next_subtitle in sorted_subtitles[1:]:
-            current_content_stripped = current_subtitle.content.strip()
-            ends_with_sentence_punct = False
-            if punct_end:
-                if (
-                    current_content_stripped
-                    and current_content_stripped[-1] in punct_end
-                ):
-                    ends_with_sentence_punct = True
+            # 如果当前字幕以标点结尾或是最后一个字幕，则合并窗口内的所有字幕
+            if ends_with_punct or i == len(sorted_subtitles) - 1:
+                # 合并窗口内的所有字幕
+                if window_start <= i:
+                    merged_subtitle = self._merge_subtitles_in_window(
+                        sorted_subtitles[window_start : i + 1]
+                    )
+                    result.append(merged_subtitle)
+                    window_start = i + 1
 
-            pause_duration = next_subtitle.start - current_subtitle.end
-            potential_total_duration = next_subtitle.end - current_subtitle.start
+        return result
 
-            should_merge = (
-                not ends_with_sentence_punct
-                and pause_duration <= max_pause
-                and potential_total_duration <= max_dur
-            )
+    def _merge_subtitles_in_window(self, subtitles: List[Subtitle]) -> Subtitle | None:
+        """合并窗口内的所有字幕"""
+        if not subtitles:
+            return None
 
-            if should_merge:
-                merged_content = (
-                    current_subtitle.content.strip()
-                    + " "
-                    + next_subtitle.content.strip()
-                )
-                new_start = current_subtitle.start
-                new_end = max(current_subtitle.end, next_subtitle.end)
+        if len(subtitles) == 1:
+            return subtitles[0]
 
-                current_subtitle = Subtitle(
-                    index=None,
-                    start=new_start,
-                    end=new_end,
-                    content=merged_content,
-                    proprietary=current_subtitle.proprietary,
-                )
-            else:
-                merged_subtitles.append(current_subtitle)
-                current_subtitle = next_subtitle
+        # 合并内容
+        merged_content = " ".join([s.content.strip() for s in subtitles])
 
-        merged_subtitles.append(current_subtitle)
+        # 使用第一个字幕的开始时间和最后一个字幕的结束时间
+        start_time = subtitles[0].start
+        end_time = subtitles[-1].end
 
-        return merged_subtitles
+        # 保留第一个字幕的其他属性
+        return Subtitle(
+            index=None,
+            start=start_time,
+            end=end_time,
+            content=merged_content,
+            proprietary=subtitles[0].proprietary,
+        )
