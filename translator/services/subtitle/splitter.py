@@ -1,4 +1,5 @@
 from typing import List
+
 import tiktoken
 
 from .parser import Subtitle
@@ -38,9 +39,7 @@ class SubtitleSplitter:
         """检查字符是否是句子结束标点。"""
         return char in {".", "?", "!", "。", "？", "！"}
 
-    def split_subtitles(
-        self, subtitles: List[Subtitle], max_tokens: int = 2000
-    ) -> List[List[Subtitle]]:
+    def split_subtitles(self, subtitles: List[Subtitle], max_tokens: int = 3000) -> List[List[Subtitle]]:
         """
         根据指定的 token 数量上限，将字幕列表切分成多个子列表（字幕块）。
         每个字幕块包含一个或多个完整的字幕
@@ -64,8 +63,7 @@ class SubtitleSplitter:
         # Greedy accumulation: add subtitles until adding the next one would
         # exceed max_tokens, then flush current chunk.
         for sub in subtitles:
-            sub_srt = sub.to_srt()
-            sub_tokens = self._count_tokens(sub_srt)
+            sub_tokens = self._count_tokens(sub.content)
 
             # If a single subtitle exceeds the budget, emit it as its own
             # chunk.
@@ -101,9 +99,7 @@ class SubtitleSplitter:
             if len(c) < min_items:
                 # try to merge into previous chunk if token budget allows
                 prev = merged[-1]
-                combined_tokens = self._count_tokens(
-                    "".join(s.to_srt() for s in prev + c)
-                )
+                combined_tokens = self._count_tokens("".join(s.to_srt() for s in prev + c))
                 if combined_tokens <= max_tokens:
                     merged[-1] = prev + c
                 else:

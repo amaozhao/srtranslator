@@ -57,10 +57,11 @@ class SubtitleWorkflow(Workflow):
             process_chunk = await self._run_chunk(chunk, i, input_path, target_lang)
 
             if not process_chunk:
-                yield RunResponse(content=f"第 {i} 块字幕处理失败，流程终止。", run_id=self.run_id)
-                return
+                yield RunResponse(content=f"第 {i} 块字幕处理失败，将保留原始字幕并继续。", run_id=self.run_id)
+                final_subs.extend(chunk)  # 保留原始字幕
+            else:
+                final_subs.extend(process_chunk)
 
-            final_subs.extend(process_chunk)
             yield RunResponse(content=f"已完成第 {i}/{len(chunks)} 块。", run_id=self.run_id)
 
         # 3. 保存处理后的字幕
@@ -112,7 +113,10 @@ class SubtitleWorkflow(Workflow):
         # 3. 验证并重组字幕
         final_texts = final_text.split("||")
         if len(final_texts) != chunk_count:
-            logger.warning(f"第 {chunk_index} 块代理返回的条目数不匹配，处理失败。")
+            logger.warning(
+                f"原始字幕条数：{len(final_texts)}, 翻译字幕条数：{chunk_count},"
+                f"第 {chunk_index} 块代理返回的条目数不匹配，处理失败。"
+            )
             return None
 
         final_subs = []
@@ -163,7 +167,7 @@ class SubtitleWorkflow(Workflow):
             logger.info("开始拼写检查...")
             proof_result = await get_proofer().arun(input_text)
             proofed = proof_result.content.proofed
-            logger.info(f"Proofer 返回内容: {proofed[:150]}...")
+            logger.info(f"Proofer 返回内容: {proofed}")
         except Exception as e:
             logger.error(f"Proofer 调用失败: {e}。回退到原始内容。")
             proofed = input_text
@@ -173,7 +177,7 @@ class SubtitleWorkflow(Workflow):
             logger.info("开始翻译处理...")
             trans_result = await get_translator().arun(proofed)
             translated = trans_result.content.translated
-            logger.info(f"Translator 返回内容: {translated[:150]}...")
+            logger.info(f"Translator 返回内容: {translated}")
         except Exception as e:
             logger.error(f"Translator 调用失败: {e}。返回空字符串。")
             return ""

@@ -1,16 +1,18 @@
-from typing import List
+import hashlib
+import json
+from datetime import datetime
 from pathlib import Path
+from typing import List
+
+import aiofiles
+import aiofiles.os
+
 from .connector import SubtitleConnector
 from .merger import SubtitleMerger
 from .parser import Subtitle, SubtitleParser
 from .reader import SubtitleReader
 from .splitter import SubtitleSplitter
 from .writer import SubtitleWriter
-import aiofiles
-import aiofiles.os
-import json
-import hashlib
-from datetime import datetime
 
 
 class SrtService:
@@ -24,9 +26,7 @@ class SrtService:
         self.merger = SubtitleMerger()
         self.writer = SubtitleWriter()
 
-    async def split(
-        self, file_path: str, max_tokens: int = 200
-    ) -> List[List[Subtitle]]:
+    async def split(self, file_path: str, max_tokens: int = 3000) -> List[List[Subtitle]]:
         """
         异步读取并解析 SRT 文件, 并合并相邻的字幕条目
 
@@ -58,9 +58,7 @@ class SrtService:
             # 写入失败不应阻塞分割流程；记录或处理可在更高层完成
             pass
 
-        chunked_subtitles = self.splitter.split_subtitles(
-            merged_subtitles, max_tokens=max_tokens
-        )
+        chunked_subtitles = self.splitter.split_subtitles(merged_subtitles, max_tokens=max_tokens)
         return chunked_subtitles
 
     # --- chunk cache helpers (for resume / breakpoint support) ---
@@ -102,9 +100,7 @@ class SrtService:
         # atomic replace
         await aiofiles.os.replace(str(tmp), str(mpath))
 
-    async def get_processed_chunk(
-        self, file_path: str, chunk_index: int, target_lang: str
-    ) -> str | None:
+    async def get_processed_chunk(self, file_path: str, chunk_index: int, target_lang: str) -> str | None:
         """Return cached processed SRT content for chunk_index or None."""
         d = self._chunks_dir(file_path)
         if not d.exists():
@@ -116,9 +112,7 @@ class SrtService:
         async with aiofiles.open(fpath, "r", encoding="utf-8") as f:
             return await f.read()
 
-    async def save_processed_chunk(
-        self, file_path: str, chunk_index: int, target_lang: str, srt_text: str
-    ) -> None:
+    async def save_processed_chunk(self, file_path: str, chunk_index: int, target_lang: str, srt_text: str) -> None:
         d = self._chunks_dir(file_path)
         d.mkdir(parents=True, exist_ok=True)
         fname = f"chunk_{chunk_index:04d}.{target_lang}.srt"
@@ -131,10 +125,7 @@ class SrtService:
         manifest = await self.load_manifest(file_path)
         manifest.setdefault("source", {})
         manifest.setdefault("chunks", {})
-        manifest["chunks"][str(chunk_index)] = {
-            "lang": target_lang,
-            "saved_at": datetime.utcnow().isoformat() + "Z",
-        }
+        manifest["chunks"][str(chunk_index)] = {"lang": target_lang, "saved_at": datetime.utcnow().isoformat() + "Z"}
         await self.save_manifest(file_path, manifest)
 
     def connect(self, chunks: List[List[Subtitle]]) -> List[Subtitle]:

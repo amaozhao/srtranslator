@@ -44,7 +44,7 @@ def trans_file(
 
 async def _trans_file(in_path: Path, out_path: Optional[Path], src: str, tgt: str, tokens: int):
     """处理单个文件"""
-    wf = SubtitleWorkflow(max_tokens=tokens)
+    wf = SubtitleWorkflow(tokens=tokens)
 
     with Progress(
         SpinnerColumn(), TextColumn("[bold blue]{task.description}[/bold blue]"), console=console
