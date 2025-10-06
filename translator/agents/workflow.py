@@ -122,6 +122,7 @@ class SubtitleWorkflow(Workflow):
         final_subs = []
         for i, text in enumerate(final_texts):
             item_from_chunk = chunk[i]
+            text = text.replace("您", "你").replace("**", "")
             # 合并原始内容和翻译内容
             new_content = f"{item_from_chunk.content.strip()}\n{text.strip()}"
             final_subs.append(
